@@ -484,8 +484,17 @@
     }
 
     // Botones
-    $btnNif.addEventListener('click', () => check("NIF", normalizeNif($nif.value)));
-    $btnEmail.addEventListener('click', () => check("Email", normalizeEmail($email.value)));
+    $btnNif.addEventListener('click', () => {
+  const valor = normalizeNif($nif.value);
+  $email.value = "";          // 🔹 limpia Email
+  check("NIF", valor);
+});
+
+$btnEmail.addEventListener('click', () => {
+  const valor = normalizeEmail($email.value);
+  $nif.value = "";            // 🔹 limpia NIF
+  check("Email", valor);
+});
 
     // Enter en inputs
     $nif.addEventListener('keydown', e => { if (e.key === 'Enter') $btnNif.click(); });
