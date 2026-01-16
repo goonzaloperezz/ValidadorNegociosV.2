@@ -52,7 +52,7 @@
 
     .card {
       width: 100%;
-      max-width: 600px;
+      max-width: 700px;
       padding: 42px;
       border: 1px solid var(--border);
       border-radius: 16px;
@@ -176,7 +176,7 @@
     /* --- Filas NIF/Email --- */
     .field-row {
       display: grid;
-      grid-template-columns: 90px 1fr 140px;
+      grid-template-columns: 90px 1fr 150px;
       gap: 12px;
       align-items: center;
       margin-top: 14px;
@@ -195,9 +195,47 @@
       .field-row {
         grid-template-columns: 1fr;
       }
-      .field-label {
-        text-align: left;
-      }
+      .field-label { text-align: left; }
+    }
+
+    /* --- Detalles de usuario --- */
+    .details {
+      margin-top: 16px;
+      text-align: left;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    .details .row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .details .row:last-child { border-bottom: none; }
+
+    .details .k {
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .details .v {
+      color: var(--text);
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -248,6 +286,7 @@
       </div>
 
       <div class="result" id="result"></div>
+      <div id="details" class="hidden"></div>
     </div>
   </div>
 
@@ -267,11 +306,12 @@
     const $iconEyeOff= document.getElementById('icon-eye-off');
     const $btnLogout = document.getElementById('btn-logout');
 
-    const $nif     = document.getElementById('nif');
-    const $email   = document.getElementById('email');
-    const $btnNif  = document.getElementById('btn-nif');
-    const $btnEmail= document.getElementById('btn-email');
-    const $res     = document.getElementById('result');
+    const $nif      = document.getElementById('nif');
+    const $email    = document.getElementById('email');
+    const $btnNif   = document.getElementById('btn-nif');
+    const $btnEmail = document.getElementById('btn-email');
+    const $res      = document.getElementById('result');
+    const $details  = document.getElementById('details');
 
     // ===== Login =====
     function setLoginMsg(text, ok = null){
@@ -310,6 +350,7 @@
     function logout(){
       localStorage.removeItem("validated");
       $res.textContent = "";
+      hideDetails();
       showLogin();
     }
 
@@ -330,15 +371,7 @@
     $pwd.addEventListener('keydown', e => { if (e.key === 'Enter') tryLogin(); });
     $btnLogout.addEventListener('click', logout);
 
-    // ===== Comprobador NIF/Email =====
-    function normalizeNif(s) {
-      return (s || "").toUpperCase().trim().replaceAll(" ", "").replaceAll("-", "");
-    }
-
-    function normalizeEmail(s) {
-      return (s || "").trim();
-    }
-
+    // ===== Helpers UI =====
     function setResult(text, ok) {
       $res.textContent = text;
       $res.classList.remove('ok','error');
@@ -351,42 +384,98 @@
       $btnEmail.disabled = disabled;
     }
 
+    function hideDetails() {
+      $details.classList.add('hidden');
+      $details.classList.remove('details');
+      $details.innerHTML = "";
+    }
+
+    function showDetails(data) {
+      const safe = (v) => (v === null || v === undefined || v === "") ? "—" : String(v);
+
+      $details.classList.remove('hidden');
+      $details.classList.add('details');
+
+      $details.innerHTML = `
+        <div class="row"><div class="k">Email</div><div class="v">${safe(data.email)}</div></div>
+        <div class="row"><div class="k">NIF</div><div class="v">${safe(data.nif)}</div></div>
+        <div class="row"><div class="k">Nombre negocio</div><div class="v">${safe(data.nombreNegocio)}</div></div>
+        <div class="row"><div class="k">Tipo usuario</div><div class="v">${safe(data.tipoUsuario)}</div></div>
+        <div class="row"><div class="k">Pagando Billing</div><div class="v"><span class="badge">${safe(data.pagandoBilling)}</span></div></div>
+        <div class="row"><div class="k">Producto</div><div class="v">${safe(data.producto)}</div></div>
+      `;
+    }
+
+    // ===== Normalizers =====
+    function normalizeNif(s) {
+      return (s || "").toUpperCase().trim().replaceAll(" ", "").replaceAll("-", "");
+    }
+
+    function normalizeEmail(s) {
+      return (s || "").trim();
+    }
+
+    // ===== Checker (interpreta salida Make) =====
     async function check(type, valor) {
       if (!valor) {
+        hideDetails();
         setResult(`Introduce un ${type === "NIF" ? "NIF" : "email"}.`, null);
         return;
       }
 
       disableChecks(true);
+      hideDetails();
       setResult("Comprobando...", null);
 
       try {
-        // Enviar Type y valor (tal cual pides)
         const body = new URLSearchParams({ Type: type, valor });
         const r = await fetch(WEBHOOK, { method: "POST", body });
 
-        // Si Make no devuelve JSON, esto fallará: lo gestionamos
+        const rawText = await r.text();
         let data = null;
-        const ct = r.headers.get("content-type") || "";
-        if (ct.includes("application/json")) {
-          data = await r.json();
-        } else {
-          // intenta parsear por si viene JSON sin header
-          const t = await r.text();
-          try { data = JSON.parse(t); } catch (_) { data = { raw: t }; }
-        }
+        try { data = JSON.parse(rawText); } catch (_) { data = rawText.trim(); }
 
         if (!r.ok) {
           setResult("Error en la comprobación (" + r.status + ")", false);
           return;
         }
 
-        // Mantengo tu contrato actual: { exists: boolean }
-        if (data && typeof data.exists === "boolean") {
-          setResult(data.exists ? "✅ Existe en la base de datos." : "❌ No existe.", data.exists);
-        } else {
+        // Si Make devuelve texto plano: "noformato" / "no_usuario" / etc.
+        if (typeof data === "string") {
+          const t = data.toLowerCase().replaceAll(" ", "");
+          if (t === "noformato" || t === "no_formato") {
+            setResult("❌ No has introducido un formato correcto.", false);
+            return;
+          }
+          if (t === "nousuario" || t === "no_usuario") {
+            setResult("❌ No usuario detectado.", false);
+            return;
+          }
           setResult("Respuesta inesperada del servidor.", false);
+          return;
         }
+
+        // Si Make devuelve JSON recomendado: { status, data }
+        const status = String(data.status || "").toLowerCase();
+
+        if (status === "no_formato" || status === "noformato") {
+          setResult("❌ No has introducido un formato correcto.", false);
+          return;
+        }
+
+        if (status === "no_usuario" || status === "nousuario") {
+          setResult("❌ No usuario detectado.", false);
+          return;
+        }
+
+        if (status === "ok") {
+          setResult("✅ Usuario encontrado.", true);
+          showDetails(data.data || {});
+          return;
+        }
+
+        setResult("Respuesta inesperada del servidor.", false);
+
       } catch (e) {
         setResult("Error de red o CORS. Revisa el Webhook response en Make.", false);
       } finally {
@@ -394,15 +483,9 @@
       }
     }
 
-    $btnNif.addEventListener('click', () => {
-      const valor = normalizeNif($nif.value);
-      check("NIF", valor);
-    });
-
-    $btnEmail.addEventListener('click', () => {
-      const valor = normalizeEmail($email.value);
-      check("Email", valor);
-    });
+    // Botones
+    $btnNif.addEventListener('click', () => check("NIF", normalizeNif($nif.value)));
+    $btnEmail.addEventListener('click', () => check("Email", normalizeEmail($email.value)));
 
     // Enter en inputs
     $nif.addEventListener('keydown', e => { if (e.key === 'Enter') $btnNif.click(); });
